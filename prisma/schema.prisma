@@ -1,0 +1,41 @@
+// 1. Definição da Fonte de Dados
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 2. Gerador do Cliente Prisma (para o VS Code te dar autocomplete)
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 3. Modelos de Dados
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  clients   Client[]
+  createdAt DateTime @default(now())
+}
+
+model Client {
+  id              String   @id @default(uuid())
+  name            String
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  
+  // O essencial para a API funcionar
+  facebookUserId  String?  @unique
+  fbAccessToken   String?  @db.Text 
+  tokenExpiresAt  DateTime?
+
+  adAccounts      AdAccount[]
+}
+
+model AdAccount {
+  id           String   @id 
+  name         String
+  clientId     String
+  client       Client   @relation(fields: [clientId], references: [id])
+}

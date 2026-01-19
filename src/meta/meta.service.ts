@@ -1,0 +1,138 @@
+import { HttpService } from '@nestjs/axios';
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { lastValueFrom } from 'rxjs';
+import { PrismaService } from 'src/prisma.service';
+
+@Injectable()
+export class MetaService {
+  constructor(
+    private configService: ConfigService,
+    private httpService: HttpService,
+    private prisma: PrismaService,
+  ) {}
+
+  getAuthorizationUrl() {
+    const appId = this.configService.get<string>('META_APP_ID');
+    const redirectUri = this.configService.get<string>('META_REDIRECT_URI');
+
+    const scope = [
+      'ads_read',
+      'business_management'
+    ].join(',');
+
+    return `https://www.facebook.com/v21.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=code`;
+  }
+
+  async exchangeCodeForToken(code: string) {
+    const appId = this.configService.get('META_APP_ID');
+    const appSecret = this.configService.get('META_APP_SECRET');
+    const redirectUri = this.configService.get('META_REDIRECT_URI');
+
+    const shortUrl = `https://graph.facebook.com/v21.0/oauth/access_token?client_id=${appId}&redirect_uri=${redirectUri}&client_secret=${appSecret}&code=${code}`;
+
+    const responseShort = await lastValueFrom(this.httpService.get(shortUrl));
+    const accessTokenShort = responseShort.data.access_token;
+
+    const longUrl = `https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${accessTokenShort}`;
+
+    const responseLong = await lastValueFrom(this.httpService.get(longUrl));
+
+    return responseLong.data;
+  }
+
+  async handleFacebookCallback(code: string) {
+    const tokenData = await this.exchangeCodeForToken(code);
+    
+    const expiresAt = new Date();
+    expiresAt.setSeconds(expiresAt.getSeconds() + tokenData.expires_in);
+
+    // 3. Salva ou Atualiza no Banco (Upsert)
+    // No Nest/Prisma, o upsert evita duplicados: se o ID existe, atualiza; se não, cria.
+    return this.prisma.client.upsert({
+      where: { facebookUserId: 'user_default' }, // Usaremos um ID fixo por enquanto para teste
+      update: {
+        fbAccessToken: tokenData.access_token,
+        tokenExpiresAt: expiresAt,
+      },
+      create: {
+        name: 'Cliente Principal',
+        facebookUserId: 'user_default',
+        fbAccessToken: tokenData.access_token,
+        tokenExpiresAt: expiresAt,
+        // Atenção: Você precisa de um User no banco para o Client existir (Relação)
+        user: {
+          connectOrCreate: {
+            where: { email: 'admin@teste.com' },
+            create: { email: 'admin@teste.com', password: '123' }
+          }
+        }
+      },
+    });
+  }
+
+  async listAdAccounts(clientId: string) {
+    // 1. Busca o cliente no banco para pegar o token
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+    });
+
+    if (!client?.fbAccessToken) throw new Error('Cliente sem token!');
+
+    // 2. Faz a chamada na API da Meta (Marketing API)
+    // O endpoint /me/adaccounts traz as contas vinculadas ao token
+    const url = `https://graph.facebook.com/v21.0/me/adaccounts?fields=name,currency,id&access_token=${client.fbAccessToken}`;
+    
+    const response = await lastValueFrom(this.httpService.get(url));
+    const accounts = response.data.data;
+
+    // 3. Salva essas contas no banco para uso futuro
+    // Usamos o createMany para salvar todas de uma vez
+    await this.prisma.adAccount.createMany({
+      data: accounts.map(acc => ({
+        id: acc.id,           // ID da Meta (ex: act_123)
+        name: acc.name,
+        clientId: client.id,
+      })),
+      skipDuplicates: true, // Se a conta já existir, ele pula
+    });
+
+    return accounts;
+  }
+
+  async getLiveInsights(
+    adAccountId: string, 
+    start?: string, 
+    end?: string
+  ) {
+    const adAccount = await this.prisma.adAccount.findUnique({
+      where: { id: adAccountId },
+      include: { client: true },
+    });
+
+    if (!adAccount || !adAccount.client.fbAccessToken) {
+      throw new Error('Conta ou Token não encontrados');
+    }
+
+    const fields = 'spend,impressions,clicks,inline_link_clicks,ctr,cpc';
+    const url = `https://graph.facebook.com/v21.0/${adAccount.id}/insights`;
+
+    // Se o usuário passar datas, usamos time_range. 
+    // Caso contrário, mantemos um padrão (ex: yesterday)
+    const params: any = {
+      fields,
+      access_token: adAccount.client.fbAccessToken,
+    };
+
+    if (start && end) {
+      // A Meta espera um JSON stringificado para o time_range
+      params.time_range = JSON.stringify({ since: start, until: end });
+    } else {
+      params.date_preset = 'today';
+    }
+
+    const response = await lastValueFrom(this.httpService.get(url, { params }));
+    
+    return response.data.data[0] || { message: `Sem dados para este período.` };
+  }
+}
