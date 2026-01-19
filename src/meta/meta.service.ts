@@ -100,39 +100,54 @@ export class MetaService {
     return accounts;
   }
 
-  async getLiveInsights(
-    adAccountId: string, 
-    start?: string, 
-    end?: string
-  ) {
+  async getLiveInsights(adAccountId: string, start?: string, end?: string) {
     const adAccount = await this.prisma.adAccount.findUnique({
       where: { id: adAccountId },
       include: { client: true },
     });
 
     if (!adAccount || !adAccount.client.fbAccessToken) {
-      throw new Error('Conta ou Token não encontrados');
+      throw new Error('Conta ou Token não encontrados no banco.');
     }
 
-    const fields = 'spend,impressions,clicks,inline_link_clicks,ctr,cpc';
+    const fields = 'spend,clicks,reach,frequency,impressions,actions,cpc,ctr,cpm';
     const url = `https://graph.facebook.com/v21.0/${adAccount.id}/insights`;
 
-    // Se o usuário passar datas, usamos time_range. 
-    // Caso contrário, mantemos um padrão (ex: yesterday)
     const params: any = {
       fields,
       access_token: adAccount.client.fbAccessToken,
     };
 
     if (start && end) {
-      // A Meta espera um JSON stringificado para o time_range
       params.time_range = JSON.stringify({ since: start, until: end });
     } else {
       params.date_preset = 'today';
     }
 
     const response = await lastValueFrom(this.httpService.get(url, { params }));
-    
-    return response.data.data[0] || { message: `Sem dados para este período.` };
+    const rawData = response.data.data[0];
+
+    if (!rawData) return { message: 'Sem dados para este período.' };
+
+    // Extração inteligente de conversas
+    const messagingConversations = rawData.actions?.find(
+      (a: any) => a.action_type === 'onsite_conversion.messaging_conversation_started_7d'
+    )?.value || 0;
+
+    return {
+      accountName: adAccount.name,
+      investido: parseFloat(rawData.spend || 0),
+      cliques: parseInt(rawData.clicks || 0),
+      alcance: parseInt(rawData.reach || 0),
+      frequencia: parseFloat(rawData.frequency || 0),
+      impressoes: parseInt(rawData.impressions || 0),
+      conversas: parseInt(messagingConversations),
+      custoPorConversa: messagingConversations > 0 
+        ? parseFloat(rawData.spend) / parseInt(messagingConversations) 
+        : 0,
+      cpc: parseFloat(rawData.cpc || 0),
+      ctr: parseFloat(rawData.ctr || 0),
+      cpm: parseFloat(rawData.cpm || 0)
+    };
   }
 }
