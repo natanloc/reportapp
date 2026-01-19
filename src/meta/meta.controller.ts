@@ -1,7 +1,9 @@
-import { Controller, Get, Res, Query, Param } from '@nestjs/common';
+import { Controller, Get, Res, Query, Param, UseGuards } from '@nestjs/common';
 import { MetaService } from './meta.service';
 import { type Response } from 'express';
+import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 
+@UseGuards(JwtAuthGuard)
 @Controller('meta')
 export class MetaController {
   constructor(private readonly metaService: MetaService) {}
