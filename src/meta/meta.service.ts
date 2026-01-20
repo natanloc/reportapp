@@ -203,17 +203,21 @@ export class MetaService {
       throw new Error(`Erro ao buscar Ads: ${error.message}`);
     }
   }
-  
-  async getGenericInsights(objectId: string, clientId: string, start?: string, end?: string) {
-    // 1. Verificação do Cliente e Token
-    const client = await this.prisma.client.findUnique({ where: { id: clientId } });
+
+  async getGenericInsights(objectId: string, userId: string, start?: string, end?: string) {
+    //Buscamos o cliente que PERTENCE ao usuário logado
+    const client = await this.prisma.client.findFirst({ 
+      where: { 
+        userId: userId // Filtro de segurança: só traz se for meu
+      } 
+    });
     
     if (!client) {
-      throw new NotFoundException('Cliente não encontrado no sistema.');
+      throw new NotFoundException('Nenhum cliente vinculado à sua conta de usuário.');
     }
 
     if (!client.fbAccessToken) {
-      throw new UnauthorizedException('O cliente selecionado não possui um token do Facebook ativo.');
+      throw new UnauthorizedException('Seu cliente não possui um token do Facebook ativo.');
     }
 
     const fields = 'spend,clicks,reach,frequency,impressions,actions,cpc,ctr,cpm';
@@ -228,23 +232,16 @@ export class MetaService {
 
     try {
       const response = await lastValueFrom(this.httpService.get(url, { params }));
-      
-      // 2. Verificação da Resposta da Meta
       const rawData = response.data?.data?.[0];
 
       if (!rawData) {
         return { 
           id: objectId,
-          message: 'Sem dados ou atividade para este objeto no período selecionado.',
-          investido: 0,
-          cliques: 0,
-          alcance: 0,
-          impressoes: 0,
-          conversas: 0
+          investido: 0, cliques: 0, alcance: 0, frequencia: 0, 
+          impressoes: 0, conversas: 0, cpc: 0, ctr: 0, cpm: 0 
         };
       }
 
-      // 3. Formatação Segura dos Dados
       const messagingConversations = rawData.actions?.find(
         (a: any) => a.action_type === 'onsite_conversion.messaging_conversation_started_7d'
       )?.value || 0;
@@ -262,9 +259,8 @@ export class MetaService {
         cpm: parseFloat(rawData.cpm || 0)
       };
     } catch (error) {
-      // 4. Tratamento de Erro da API (Token expirado, ID inválido, etc)
       const errorMessage = error.response?.data?.error?.message || error.message;
-      throw new Error(`Falha na API da Meta para o objeto ${objectId}: ${errorMessage}`);
+      throw new Error(`Erro na Meta API: ${errorMessage}`);
     }
   }
 }

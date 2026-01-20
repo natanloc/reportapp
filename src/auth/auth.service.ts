@@ -34,7 +34,7 @@ export class AuthService {
     return result;
   }
 
-  async login(email: string, password: string) {
+  async login(email: string, password: string, response: any) {
     const user = await this.prisma.user.findUnique({ where: { email } });
 
     if (!user) {
@@ -50,9 +50,18 @@ export class AuthService {
 
     // Payload: o que vai "dentro" do token (o ID do usuário é essencial)
     const payload = { sub: user.id, email: user.email };
+    const token = this.jwtService.sign(payload)
+
+    // Enviando o Cookie de forma segura
+    response.cookie('access_token', token, {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax', 
+      maxAge: 1000 * 60 * 60 * 24,
+    });
 
     return {
-      access_token: this.jwtService.sign(payload),
+      message: 'Login realizado com sucesso'
     };
   }
 }
