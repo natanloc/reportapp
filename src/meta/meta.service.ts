@@ -1,5 +1,5 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { lastValueFrom } from 'rxjs';
 import { PrismaService } from 'src/prisma.service';
@@ -149,5 +149,122 @@ export class MetaService {
       ctr: parseFloat(rawData.ctr || 0),
       cpm: parseFloat(rawData.cpm || 0)
     };
+  }
+
+  async listAdSets(adAccountId: string) {
+    const adAccount = await this.prisma.adAccount.findUnique({
+      where: { id: adAccountId },
+      include: { client: true },
+    });
+
+    // Verificação 1: Existe no nosso banco?
+    if (!adAccount || !adAccount.client?.fbAccessToken) {
+      throw new NotFoundException('Conta de anúncios ou Token não encontrados.');
+    }
+
+    try {
+      const url = `https://graph.facebook.com/v21.0/${adAccount.id}/adsets`;
+      const response = await lastValueFrom(
+        this.httpService.get(url, {
+          params: {
+            fields: 'id,name,status,daily_budget,lifetime_budget',
+            access_token: adAccount.client.fbAccessToken,
+          },
+        }),
+      );
+
+      // Verificação 2: A Meta retornou dados?
+      return response.data?.data || [];
+    } catch (error) {
+      throw new Error(`Erro na API da Meta: ${error.response?.data?.error?.message || error.message}`);
+    }
+  }
+
+  async listAds(adSetId: string, clientId: string) {
+    const client = await this.prisma.client.findUnique({ where: { id: clientId } });
+
+    if (!client?.fbAccessToken) {
+      throw new UnauthorizedException('Token do cliente não encontrado.');
+    }
+
+    try {
+      const url = `https://graph.facebook.com/v21.0/${adSetId}/ads`;
+      const response = await lastValueFrom(
+        this.httpService.get(url, {
+          params: {
+            fields: 'id,name,status,creative',
+            access_token: client.fbAccessToken,
+          },
+        }),
+      );
+
+      return response.data?.data || [];
+    } catch (error) {
+      throw new Error(`Erro ao buscar Ads: ${error.message}`);
+    }
+  }
+  
+  async getGenericInsights(objectId: string, clientId: string, start?: string, end?: string) {
+    // 1. Verificação do Cliente e Token
+    const client = await this.prisma.client.findUnique({ where: { id: clientId } });
+    
+    if (!client) {
+      throw new NotFoundException('Cliente não encontrado no sistema.');
+    }
+
+    if (!client.fbAccessToken) {
+      throw new UnauthorizedException('O cliente selecionado não possui um token do Facebook ativo.');
+    }
+
+    const fields = 'spend,clicks,reach,frequency,impressions,actions,cpc,ctr,cpm';
+    const url = `https://graph.facebook.com/v21.0/${objectId}/insights`;
+
+    const params: any = {
+      fields,
+      access_token: client.fbAccessToken,
+      time_range: start && end ? JSON.stringify({ since: start, until: end }) : undefined,
+      date_preset: !start ? 'today' : undefined,
+    };
+
+    try {
+      const response = await lastValueFrom(this.httpService.get(url, { params }));
+      
+      // 2. Verificação da Resposta da Meta
+      const rawData = response.data?.data?.[0];
+
+      if (!rawData) {
+        return { 
+          id: objectId,
+          message: 'Sem dados ou atividade para este objeto no período selecionado.',
+          investido: 0,
+          cliques: 0,
+          alcance: 0,
+          impressoes: 0,
+          conversas: 0
+        };
+      }
+
+      // 3. Formatação Segura dos Dados
+      const messagingConversations = rawData.actions?.find(
+        (a: any) => a.action_type === 'onsite_conversion.messaging_conversation_started_7d'
+      )?.value || 0;
+
+      return {
+        id: objectId,
+        investido: parseFloat(rawData.spend || 0),
+        cliques: parseInt(rawData.clicks || 0),
+        alcance: parseInt(rawData.reach || 0),
+        frequencia: parseFloat(rawData.frequency || 0),
+        impressoes: parseInt(rawData.impressions || 0),
+        conversas: parseInt(messagingConversations),
+        cpc: parseFloat(rawData.cpc || 0),
+        ctr: parseFloat(rawData.ctr || 0),
+        cpm: parseFloat(rawData.cpm || 0)
+      };
+    } catch (error) {
+      // 4. Tratamento de Erro da API (Token expirado, ID inválido, etc)
+      const errorMessage = error.response?.data?.error?.message || error.message;
+      throw new Error(`Falha na API da Meta para o objeto ${objectId}: ${errorMessage}`);
+    }
   }
 }

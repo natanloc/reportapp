@@ -10,7 +10,7 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
-  async register(email: string, pass: string) {
+  async register(email: string, password: string) {
     // 1. Verifica se o usuário já existe
     const userExists = await this.prisma.user.findUnique({ where: { email } });
     if (userExists) {
@@ -19,7 +19,7 @@ export class AuthService {
     }
 
     // 2. Gera o Hash da senha
-    const hashedPassword = await bcrypt.hash(pass, 10);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     // 3. Salva no banco
     const newUser = await this.prisma.user.create({
@@ -34,7 +34,7 @@ export class AuthService {
     return result;
   }
 
-  async login(email: string, pass: string) {
+  async login(email: string, password: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
 
     if (!user) {
@@ -42,7 +42,7 @@ export class AuthService {
     }
 
     // Compara a senha digitada com o hash do banco
-    const isMatch = await bcrypt.compare(pass, user.password);
+    const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
       throw new UnauthorizedException('E-mail ou senha inválidos');

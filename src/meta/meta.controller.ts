@@ -45,4 +45,25 @@ export class MetaController {
   ) {
     return await this.metaService.getLiveInsights(adAccountId, start, end);
   }
+
+  @Get('adsets/:adAccountId')
+  async getAdSets(@Param('adAccountId') adAccountId: string) {
+    return this.metaService.listAdSets(adAccountId);
+  }
+
+  @Get('ads/:adSetId')
+    async getAds(@Param('adSetId') adSetId: string, @Query('clientId') clientId: string) {
+      return this.metaService.listAds(adSetId, clientId);
+    }
+
+    // Rota mestre: serve para pegar insight de ADSET ou de AD, basta passar o ID
+    @Get('insights/flexible/:objectId')
+    async getFlexibleInsights(
+      @Param('objectId') objectId: string,
+      @Query('clientId') clientId: string,
+      @Query('start') start: string,
+      @Query('end') end: string,
+    ) {
+      return this.metaService.getGenericInsights(objectId, clientId, start, end);
+    }
 }
