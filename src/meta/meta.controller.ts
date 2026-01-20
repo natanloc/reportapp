@@ -2,6 +2,7 @@ import { Controller, Get, Res, Query, Param, UseGuards } from '@nestjs/common';
 import { MetaService } from './meta.service';
 import { type Response } from 'express';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { GetUser } from 'src/auth/get-user.decorator';
 
 @UseGuards(JwtAuthGuard)
 @Controller('meta')
@@ -60,10 +61,10 @@ export class MetaController {
     @Get('insights/flexible/:objectId')
     async getFlexibleInsights(
       @Param('objectId') objectId: string,
-      @Query('clientId') clientId: string,
+      @GetUser() user: any, // Puxa o sub do JWT
       @Query('start') start: string,
       @Query('end') end: string,
     ) {
-      return this.metaService.getGenericInsights(objectId, clientId, start, end);
+      return this.metaService.getGenericInsights(objectId, user.userId, start, end);
     }
 }
