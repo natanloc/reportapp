@@ -1,4 +1,4 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import { Controller, Post, Body, Res } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { response } from 'express';
 
@@ -14,5 +14,17 @@ export class AuthController {
   @Post('login')
   async login(@Body() body: any) {
     return this.authService.login(body.email, body.password, response);
+  }
+
+  @Post('logout')
+  async logout(@Res({ passthrough: true }) response: any) {
+    // limpamos o cookie enviando um com data de expiração no passado
+    response.clearCookie('access_token', {
+      httpOnly: true,
+      secure: false, // Mude para true em produção (HTTPS)
+      sameSite: 'lax',
+    });
+
+    return { message: 'Logout realizado com sucesso' };
   }
 }
