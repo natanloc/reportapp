@@ -2,12 +2,14 @@ import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/
 import { PrismaService } from '../prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private configService: ConfigService,
   ) {}
 
   async register(email: string, password: string) {
@@ -41,21 +43,22 @@ export class AuthService {
       throw new UnauthorizedException('E-mail ou senha inválidos');
     }
 
-    // Compara a senha digitada com o hash do banco
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
       throw new UnauthorizedException('E-mail ou senha inválidos');
     }
 
-    // Payload: o que vai "dentro" do token (o ID do usuário é essencial)
     const payload = { sub: user.id, email: user.email };
-    const token = this.jwtService.sign(payload)
 
-    // Enviando o Cookie de forma segura
+    // MUDANÇA AQUI: Passamos a secret explicitamente para evitar o erro de 'undefined'
+    const token = this.jwtService.sign(payload, {
+      secret: this.configService.get<string>('JWT_SECRET'),
+    });
+
     response.cookie('access_token', token, {
       httpOnly: true,
-      secure: false,
+      secure: false, 
       sameSite: 'lax', 
       maxAge: 1000 * 60 * 60 * 24,
     });

@@ -151,29 +151,55 @@ export class MetaService {
     };
   }
 
-  async listAdSets(adAccountId: string) {
-    const adAccount = await this.prisma.adAccount.findUnique({
-      where: { id: adAccountId },
-      include: { client: true },
+  async listCampaigns(userId: string, adAccountId: string) {
+    const client = await this.prisma.client.findFirst({ 
+      where: { userId: userId } 
     });
 
-    // Verificação 1: Existe no nosso banco?
-    if (!adAccount || !adAccount.client?.fbAccessToken) {
-      throw new NotFoundException('Conta de anúncios ou Token não encontrados.');
+    if (!client || !client.fbAccessToken) {
+      throw new UnauthorizedException('Token da Meta não encontrado.');
+    }
+
+    // Usamos o ID que veio do parâmetro da rota
+    const url = `https://graph.facebook.com/v21.0/act_${adAccountId}/campaigns`;
+    
+    const params = {
+      fields: 'name,status,objective,start_time',
+      access_token: client.fbAccessToken,
+    };
+
+    try {
+      const response = await lastValueFrom(this.httpService.get(url, { params }));
+      return response.data.data;
+    } catch (error) {
+      const errorMessage = error.response?.data?.error?.message || error.message;
+      throw new Error(`Erro ao buscar campanhas: ${errorMessage}`);
+    }
+  }
+
+  async listAdSets(campaignId: string, userId: string) {
+    // 1. Buscamos o cliente vinculado ao seu usuário logado
+    const client = await this.prisma.client.findFirst({ 
+      where: { userId } 
+    });
+
+    if (!client || !client.fbAccessToken) {
+      throw new NotFoundException('Cliente ou Token não encontrados.');
     }
 
     try {
-      const url = `https://graph.facebook.com/v21.0/${adAccount.id}/adsets`;
+      // 2. O 'parentId' pode ser o act_ID ou o ID de uma campanha
+      const url = `https://graph.facebook.com/v21.0/${campaignId}/adsets`;
+      
       const response = await lastValueFrom(
         this.httpService.get(url, {
           params: {
             fields: 'id,name,status,daily_budget,lifetime_budget',
-            access_token: adAccount.client.fbAccessToken,
+            access_token: client.fbAccessToken,
           },
         }),
       );
 
-      // Verificação 2: A Meta retornou dados?
       return response.data?.data || [];
     } catch (error) {
       throw new Error(`Erro na API da Meta: ${error.response?.data?.error?.message || error.message}`);

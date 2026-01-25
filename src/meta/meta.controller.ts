@@ -15,7 +15,7 @@ export class MetaController {
     return res.redirect(url);
   }
 
-  @Get('callback')
+  @Get('facebook-connection')
   async callback(@Query('code') code: string) {
     if (!code) {
       return { error: 'O usuário negou o acesso ou ocorreu um erro.' };
@@ -38,33 +38,44 @@ export class MetaController {
     };
   }
 
-  @Get('insights/:adAccountId')
+  @Get('account-insights/:adAccountId')
   async getInsights(
     @Param('adAccountId') adAccountId: string,
-    @Query('start') start: string, // Ex: 2024-01-01
-    @Query('end') end: string,     // Ex: 2024-01-10
+    @Query('start') start: string,
+    @Query('end') end: string,
   ) {
     return await this.metaService.getLiveInsights(adAccountId, start, end);
   }
 
-  @Get('adsets/:adAccountId')
-  async getAdSets(@Param('adAccountId') adAccountId: string) {
-    return this.metaService.listAdSets(adAccountId);
+  @Get('list-campaigns/:adAccountId')
+  async listCampaigns(
+    @Param('adAccountId') adAccountId: string,
+    @GetUser() user: { userId: string }
+  ) {
+    return this.metaService.listCampaigns(user.userId, adAccountId);
   }
 
-  @Get('ads/:adSetId')
-    async getAds(@Param('adSetId') adSetId: string, @Query('clientId') clientId: string) {
-      return this.metaService.listAds(adSetId, clientId);
-    }
+  @Get('list-adsets/:campaignId')
+  async getAdSets(
+    @Param('campaignId') campaignId: string,
+    @GetUser() user: { userId: string }
+  ) {
+    return this.metaService.listAdSets(campaignId, user.userId);
+  }
 
-    // Rota mestre: serve para pegar insight de ADSET ou de AD, basta passar o ID
-    @Get('insights/flexible/:objectId')
-    async getFlexibleInsights(
-      @Param('objectId') objectId: string,
-      @GetUser() user: any, // Puxa o sub do JWT
-      @Query('start') start: string,
-      @Query('end') end: string,
-    ) {
-      return this.metaService.getGenericInsights(objectId, user.userId, start, end);
-    }
+  @Get('list-ads/:adSetId')
+  async getAds(@Param('adSetId') adSetId: string, @Query('clientId') clientId: string) {
+    return this.metaService.listAds(adSetId, clientId);
+  }
+
+  @Get('insights/:objectId')
+  async getFlexibleInsights(
+    @Param('objectId') objectId: string,
+    @GetUser() user: { userId: string, email: string },
+    @Query('start') start?: string,
+    @Query('end') end?: string,
+  ) {
+    
+    return this.metaService.getGenericInsights(objectId, user.userId, start, end);
+  }
 }

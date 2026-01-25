@@ -9,14 +9,19 @@ import { JwtStrategy } from './jwt.strategy';
 
 @Module({
   imports: [
+    ConfigModule,
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret: config.get('JWT_SECRET'),
-        signOptions: { expiresIn: '1d' }, // Login dura 1 dia
-      }),
+      useFactory: (config: ConfigService) => {
+        const secret = config.get('JWT_SECRET');
+        console.log('DEBUG: Carregando secret:', secret); // Veja se isso aparece no seu terminal
+        return {
+          secret: secret,
+          signOptions: { expiresIn: '1d' },
+        };
+      },
     }),
   ],
   controllers: [AuthController],

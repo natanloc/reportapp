@@ -12,7 +12,11 @@ export class AuthController {
   }
 
   @Post('login')
-  async login(@Body() body: any) {
+  async login(
+    @Body() body: any, 
+    @Res({ passthrough: true }) response: Response // Adicione isso aqui!
+  ) {
+    // Agora o 'response' existe e pode ser passado para o service
     return this.authService.login(body.email, body.password, response);
   }
 
